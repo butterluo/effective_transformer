@@ -290,12 +290,12 @@ void compress_bert_input(
   int mask_idx  = bid * seq_len + wid;
 
   if (mask[mask_idx] > 0.5) {
-    int valid_idx = prefix_sum[mask_idx];
+    int valid_idx = prefix_sum[mask_idx];//BTBT prefix_sum中的前缀和作为压缩后的矩阵的每个元素的顺序下标
 
     /// 2. wirte batch id and word id for each word
     if (tid == 0) {
-      batch_idx[valid_idx] = bid;
-      word_idx[valid_idx]  = wid;
+      batch_idx[valid_idx] = bid;//BTBT 保存压缩后的矩阵的每个元素的顺序下标(前缀和)所在元素对应哪个batch中的哪个seq的哪个word, 这里的bid其实就seqId,即一个batch中的第几个句子
+      word_idx[valid_idx]  = wid;//BTBT TOREFACTOR 这里是分两个数组保存batch和word信息,也可以把一个元素对应的seq和word信息编码到一个数字上,就可以只用一个数组保存了. 比如若batchSz小于100的话,可以通过wid * 100 + bid(即seqId)来用一个数代表batch和word
     }
     
     /// 3. copy src data

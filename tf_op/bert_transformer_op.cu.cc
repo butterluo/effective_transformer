@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#ifdef GOOGLE_CUDA
+// #ifdef GOOGLE_CUDA //BTBT COMMENT FOR TEST
 #define EIGEN_USE_GPU
 #include "bert_transformer_op.h"
 #include "common.h"
@@ -70,7 +70,7 @@ struct EffectiveTransformerOpFunctor<GPUDevice, T>
       Tensor buf_tensor;
       int batch_size     = t_param.batch_size_;
       int head_num       = t_param.head_num_;
-      int from_seq_len   = t_param.from_seq_len_;
+      int from_seq_len   = t_param.from_seq_len_;   //max_seq_len
       int size_per_head  = t_param.size_per_head_;
       int input_tensor_size = batch_size * head_num * from_seq_len * size_per_head;
       int attn_tensor_size  = batch_size * head_num * from_seq_len * from_seq_len;
@@ -107,8 +107,8 @@ struct EffectiveTransformerOpFunctor<GPUDevice, T>
         int k = t_param.head_num_ * t_param.size_per_head_;
         int n = k;
 
-        check_cuda_error(cublasGemmEx(param.cublas_handle,
-          CUBLAS_OP_N, CUBLAS_OP_N,
+        check_cuda_error(cublasGemmEx(param.cublas_handle,//BTBT 由于from_tensor是压缩后的,所以它的大小m*k = valid_word_num * head_num_ * size_per_head_ 中的valid_word_num是不包含pad的batch中真正wrd的个数,
+          CUBLAS_OP_N, CUBLAS_OP_N,                       //BTBT 而不是包含pad的batchSz * max_seq_len, 因此cublasGemmEx()矩阵乘法可以节省不少访存和计算时间
           n, m, k,
           &alpha,
           param.attr_kernel_Q, AType, n,
@@ -157,9 +157,9 @@ struct EffectiveTransformerOpFunctor<GPUDevice, T>
 
       /// 6. self-attention
       {
-        check_cuda_error(cublasGemmStridedBatchedEx(param.cublas_handle,
-          CUBLAS_OP_T, CUBLAS_OP_N,
-          from_seq_len, from_seq_len, size_per_head,
+        check_cuda_error(cublasGemmStridedBatchedEx(param.cublas_handle,      //BTBT 由于用的是*StridedBatched* gemm api,所以要保证每个矩阵的每次stride的步长(比如A和B的from_seq_len * size_per_head,C的from_seq_len * from_seq_len)一样,
+          CUBLAS_OP_T, CUBLAS_OP_N,                                           //BTBT 所以要在上面的add_QKV_bias_padding_kernelLauncher()中把padding的embed=0补回来,使得每个seq的长度都是max_seq_len,才能用该API,
+          from_seq_len, from_seq_len, size_per_head,                              //BTBT TOREFACTOR 那如果自己写的话,是不是就可以支持不同stride步长了???
           &alpha,
           key_, AType, size_per_head, from_seq_len * size_per_head,
           query_, BType, size_per_head, from_seq_len * size_per_head,
@@ -185,7 +185,7 @@ struct EffectiveTransformerOpFunctor<GPUDevice, T>
           computeType,
           static_cast<cublasGemmAlgo_t>(cublasAlgo[2])));
 
-        cuda::transpose_rm_padding_kernelLauncher<DataType_>(
+        cuda::transpose_rm_padding_kernelLauncher<DataType_>(          //BTBT 在这里又把为了用cublasGemmStridedBatchedEx而加上的padding给去掉,后续做压缩版的FFN和LN,(因为它实际上是instance LN),//BTBT TOREFACTOR 如果做token级别的LN会不会更好?但貌似会更慢
           transpose_dst_, attr_out_buf_,
           valid_word_num, batch_size, from_seq_len, head_num, size_per_head,
           param.batch_idx, param.word_idx, stream);
@@ -377,7 +377,7 @@ template struct functor::EffectiveTransformerOutputOpFunctor<GPUDevice, Eigen::h
 } //namespace functor
 
 } //namespace tensorflow
-#endif
+// #endif  //BTBT COMMENT FOR TEST
 
 
 // { ////////////////////////////////////////////////////////////////////////////////
